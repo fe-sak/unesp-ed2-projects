@@ -1,6 +1,6 @@
 #pragma once
-void runCommand(int command);
+void run_command(int command);
 
 void loadFilesInMemory();
 
-void cleanStdIn();
+void clean_stdin();

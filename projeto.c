@@ -78,7 +78,7 @@ void load_output_file(FILE **file_pointer, char *file_path) {
   }
 }
 
-void closeAllOpenedFiles() {
+void close_all_opened_files() {
   if (files.busca_p) {
     fclose(files.busca_p);
   }
@@ -99,7 +99,7 @@ void closeAllOpenedFiles() {
   }
 }
 
-struct Files getFiles() {
+struct Files get_files() {
   printf("\nLendo arquivos\n");
 
   // loadInputFile(files.busca_p, files.busca_p_path);
@@ -115,9 +115,9 @@ struct Files getFiles() {
   return files;
 }
 
-int readCommand() {
+int read_command() {
   int command;
-  bool invalidCommand = true;
+  bool invalid_command = true;
 
   do {
     printf("\nOperações disponíveis ============================\n");
@@ -129,49 +129,49 @@ int readCommand() {
 
     scanf("%d", &command);
 
-    invalidCommand =
+    invalid_command =
         !(command == 1 || command == 2 || command == 3 || command == 4);
 
-    if (invalidCommand) {
+    if (invalid_command) {
       printf("Operação invalida.\n\n");
     }
 
-  } while ((invalidCommand));
+  } while ((invalid_command));
 
   return command;
 }
 
-void cleanStdIn() {
+void clean_stdin() {
   char trash;
   while ((trash = getchar()) != '\n' && trash != EOF) {
     printf("%c", trash);
   }
 }
 
-void insertRegister() {
+void insert_register() {
   load_input_file(&files.insere, files.insere_path);
 
   // load insertRegisters into memory
-  int insertRegistersCount = 0;
+  int insert_registers_count = 0;
   struct Register r;
 
   while (fread(&r, sizeof(struct Register), 1, files.insere)) {
-    insertRegistersCount++;
+    insert_registers_count++;
   }
 
   rewind(files.insere);
 
-  struct Register registers[insertRegistersCount];
+  struct Register registers[insert_registers_count];
 
   fread(&registers, sizeof(registers), 1, files.insere);
 
   fclose(files.insere);
 }
 
-void runCommand(int command) {
+void run_command(int command) {
   switch (command) {
   case 1:
-    insertRegister();
+    insert_register();
     break;
   case 2:
     printf("\n2 não implementado\n");
@@ -192,11 +192,11 @@ int main() {
   int command;
 
   do {
-    command = readCommand();
-    runCommand(command);
+    command = read_command();
+    run_command(command);
   } while (command != 4);
 
-  closeAllOpenedFiles();
+  close_all_opened_files();
 
   printf("\n");
 }
