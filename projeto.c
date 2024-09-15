@@ -2,15 +2,21 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // structs
-struct Register {
+struct StudentHist {
   char id_aluno[4];
   char sigla_disc[4];
   char nome_aluno[50];
   char nome_disc[50];
   float media;
   float freq;
+};
+
+struct SecondaryIndex {
+  char nome_aluno[50];
+  int byteOffset;
 };
 
 struct Files {
@@ -20,7 +26,8 @@ struct Files {
 
   FILE *data;
   FILE *p_index;
-  FILE *s_index;
+  FILE *s_index_1;
+  FILE *s_index_2;
   FILE *last_inserted;
   FILE *last_removed;
 
@@ -30,9 +37,9 @@ struct Files {
 
   char data_path[50];
   char p_index_path[50];
-  char s_index_path[50];
+  char s_index_1_path[50];
+  char s_index_2_path[50];
   char last_inserted_path[50];
-  char last_removed_path[50];
 };
 
 // globals
@@ -44,6 +51,9 @@ struct Files files = {
     NULL,
     NULL,
     NULL,
+    NULL,
+    NULL,
+    NULL,
 
     "./input/busca_p.bin",
     "./input/busca_s.bin",
@@ -51,31 +61,37 @@ struct Files files = {
 
     "./output/data.bin",
     "./output/p_index.bin",
-    "./output/s_index.bin",
+    "./output/s_index_1.bin",
+    "./output/s_index_2.bin",
+    "./output/last_inserted.bin",
 };
 
 // functions
-void load_input_file(FILE **file_pointer, char *file_path) {
-  *file_pointer = fopen(file_path, "rb");
+FILE *load_input_file(char *file_path) {
+  FILE *file_pointer = fopen(file_path, "rb");
 
   if (file_pointer == NULL) {
     printf("Não foi possível ler o arquivo %s\n", file_path);
     exit(1);
   }
+
+  return file_pointer;
 }
 
-void load_output_file(FILE **file_pointer, char *file_path) {
-  *file_pointer = fopen(file_path, "rb");
+FILE *load_output_file(char *file_path) {
+  FILE *file_pointer = fopen(file_path, "rb");
 
   if (file_pointer != NULL) {
     // file exists, open in write read mode
-    fclose(*file_pointer);
-    *file_pointer = fopen(file_path, "rb+");
+    fclose(file_pointer);
+    file_pointer = fopen(file_path, "rb+");
   } else {
     // create file
-    *file_pointer = fopen(file_path, "wb+");
+    file_pointer = fopen(file_path, "wb+");
     printf("\nArquivo %s criado\n", file_path);
   }
+
+  return file_pointer;
 }
 
 void close_all_opened_files() {
@@ -94,8 +110,12 @@ void close_all_opened_files() {
   if (files.p_index) {
     fclose(files.p_index);
   }
-  if (files.s_index) {
-    fclose(files.s_index);
+  if (files.s_index_1) {
+    fclose(files.s_index_1);
+  }
+
+  if (files.s_index_2) {
+    fclose(files.s_index_2);
   }
 }
 
@@ -149,23 +169,113 @@ void clean_stdin() {
 }
 
 void insert_register() {
-  load_input_file(&files.insere, files.insere_path);
+  files.insere = load_input_file(files.insere_path);
 
-  // load insertRegisters into memory
+  // load students histories into memory
   int insert_registers_count = 0;
-  struct Register r;
-
-  while (fread(&r, sizeof(struct Register), 1, files.insere)) {
+  struct StudentHist temp;
+  while (fread(&temp, sizeof(struct StudentHist), 1, files.insere)) {
     insert_registers_count++;
   }
-
   rewind(files.insere);
-
-  struct Register registers[insert_registers_count];
-
-  fread(&registers, sizeof(registers), 1, files.insere);
-
+  struct StudentHist studentHists[insert_registers_count];
+  fread(&studentHists, sizeof(studentHists), 1, files.insere);
   fclose(files.insere);
+
+  // get last inserted
+  files.last_inserted = load_output_file(files.last_inserted_path);
+  int last_inserted = -1;
+  fread(&last_inserted, sizeof(int), 1, files.last_inserted);
+  rewind(files.last_inserted);
+  if (last_inserted >= insert_registers_count - 1) {
+    printf("\nTodos os registros do arquivo insere.bin foram inseridos, "
+           "portanto nao eh possivel inserir mais registros.");
+    return;
+  }
+
+  // write student history into data file
+  last_inserted++;
+  char buffer[200];
+  snprintf(buffer, sizeof(buffer), "%s#%s#%s#%s#%.2f#%.2f",
+           studentHists[last_inserted].id_aluno,
+           studentHists[last_inserted].sigla_disc,
+           studentHists[last_inserted].nome_aluno,
+           studentHists[last_inserted].nome_disc,
+           studentHists[last_inserted].media, studentHists[last_inserted].freq);
+
+  int buffer_size = strlen(buffer);
+  buffer[buffer_size] = '\0';
+  buffer_size++;
+  int studentHistorySize = buffer_size;
+
+  files.data = load_output_file(files.data_path);
+  fseek(files.data, 0, SEEK_END);
+  fwrite(&buffer_size, sizeof(int), 1, files.data);
+  fwrite(buffer, sizeof(char), buffer_size, files.data);
+
+  long endOfInserted = ftell(files.data);
+  long byteOffset = endOfInserted - studentHistorySize - sizeof(buffer_size);
+  fclose(files.data);
+
+  // write to last_inserted file
+  fwrite(&last_inserted, sizeof(int), 1, files.last_inserted);
+
+  // write to primary index
+  files.p_index = load_output_file(files.p_index_path);
+  snprintf(buffer, sizeof(buffer), "%s+%s+",
+           studentHists[last_inserted].id_aluno,
+           studentHists[last_inserted].sigla_disc);
+
+  fseek(files.p_index, 0, SEEK_END);
+  buffer_size = strlen(buffer);
+  fwrite(buffer, sizeof(char), buffer_size, files.p_index);
+  fwrite(&byteOffset, sizeof(byteOffset), 1, files.p_index);
+
+  // write to secondary index
+  // 1- procurar o nome no arquivo S1
+  // Caso nome não encontrado
+  // TODO
+  files.s_index_1 = load_output_file(files.s_index_1_path);
+  struct SecondaryIndex secondaryIndex;
+  int foundByteOffset = -1;
+  fseek(files.s_index_1, sizeof(secondaryIndex.byteOffset), SEEK_CUR);
+  while (fread(&secondaryIndex, sizeof(secondaryIndex), 1, files.s_index_1)) {
+    if (strcmp(secondaryIndex.nome_aluno,
+               studentHists[last_inserted].nome_aluno) == 0) {
+      foundByteOffset = secondaryIndex.byteOffset;
+      break;
+    }
+  }
+
+  printf("ByteOffset: %d\n\n\n", foundByteOffset);
+
+  if (foundByteOffset == -1) {
+    files.s_index_2 = load_output_file(files.s_index_2_path);
+    fseek(files.s_index_2, 0, SEEK_END);
+    secondaryIndex.byteOffset = ftell(files.s_index_2);
+
+    printf("SecondaryByteOffset: %d\n\n\n", secondaryIndex.byteOffset);
+
+    strcpy(secondaryIndex.nome_aluno, studentHists[last_inserted].nome_aluno);
+
+    printf("Nome: %s\n\n\n", secondaryIndex.nome_aluno);
+
+    int registerSize = strlen(secondaryIndex.nome_aluno);
+    registerSize += sizeof(secondaryIndex.byteOffset);
+
+    fwrite(&registerSize, sizeof(registerSize), 1, files.s_index_1);
+
+    fwrite(secondaryIndex.nome_aluno, strlen(secondaryIndex.nome_aluno), 1,
+           files.s_index_1);
+    fwrite(&secondaryIndex.byteOffset, sizeof(secondaryIndex.byteOffset), 1,
+           files.s_index_1);
+  }
+
+  // Caso nome encontrado
+  fclose(files.p_index);
+  fclose(files.last_inserted);
+  fclose(files.s_index_1);
+  fclose(files.s_index_2);
 }
 
 void run_command(int command) {
