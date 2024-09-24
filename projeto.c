@@ -149,8 +149,8 @@ int read_command() {
 
     scanf("%d", &command);
 
-    invalid_command =
-        !(command == 1 || command == 2 || command == 3 || command == 4);
+    invalid_command = !(command == 1 || command == 2 || command == 3 ||
+                        command == 4 || command == 5);
 
     if (invalid_command) {
       printf("Operação invalida.\n\n");
@@ -177,6 +177,7 @@ void insert_register() {
   while (fread(&temp, sizeof(struct StudentHist), 1, files.insere)) {
     insert_registers_count++;
   }
+
   rewind(files.insere);
   struct StudentHist studentHists[insert_registers_count];
   fread(&studentHists, sizeof(studentHists), 1, files.insere);
@@ -261,8 +262,8 @@ void insert_register() {
     printf("Nome: %s\n\n\n", secondaryIndex.nome_aluno);
 
     int registerSize = strlen(secondaryIndex.nome_aluno);
-    registerSize += sizeof(secondaryIndex.byteOffset);
 
+    fseek(files.s_index_1, 0, SEEK_END);
     fwrite(&registerSize, sizeof(registerSize), 1, files.s_index_1);
 
     fwrite(secondaryIndex.nome_aluno, strlen(secondaryIndex.nome_aluno), 1,
@@ -278,6 +279,14 @@ void insert_register() {
   fclose(files.s_index_2);
 }
 
+void remove_files() {
+  remove(files.data_path);
+  remove(files.p_index_path);
+  remove(files.s_index_1_path);
+  remove(files.s_index_2_path);
+  remove(files.last_inserted_path);
+}
+
 void run_command(int command) {
   switch (command) {
   case 1:
@@ -291,6 +300,9 @@ void run_command(int command) {
     break;
   case 4:
     printf("\nPrograma encerrado ###############################\n");
+    break;
+  case 5:
+    remove_files();
     break;
   default:
     printf("\nOperação não reconhecida\n");
