@@ -270,6 +270,7 @@ void insert_register() {
   printf("ByteOffset: %d\n\n\n", foundByteOffset);
 
   if (foundByteOffset == -1) {
+    // write secondary key to s1
     files.s_index_2 = load_output_file(files.s_index_2_path);
 
     fseek(files.s_index_2, 0, SEEK_END);
@@ -290,6 +291,18 @@ void insert_register() {
            files.s_index_1);
     fwrite(&secondaryIndex.byteOffset, sizeof(secondaryIndex.byteOffset), 1,
            files.s_index_1);
+
+    // write primary key reference to s2
+    // primarykey_byteoffset
+    char primaryKey[7] = "";
+    strcat(primaryKey, studentHists[last_inserted].id_aluno);
+    strcat(primaryKey, "+");
+    strcat(primaryKey, studentHists[last_inserted].sigla_disc);
+
+    fwrite(primaryKey, sizeof(primaryKey), 1, files.s_index_2);
+
+    int endOfList = -1;
+    fwrite(&endOfList, sizeof(endOfList), 1, files.s_index_2);
   }
 
   // Caso nome encontrado
