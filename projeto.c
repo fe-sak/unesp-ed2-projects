@@ -97,25 +97,39 @@ FILE *load_output_file(char *file_path) {
 void close_all_opened_files() {
   if (files.busca_p) {
     fclose(files.busca_p);
+    files.busca_p = NULL;
   }
   if (files.busca_s) {
     fclose(files.busca_s);
-  }
-  if (files.data) {
-    fclose(files.data);
+    files.busca_s = NULL;
   }
   if (files.insere) {
     fclose(files.insere);
+    files.insere = NULL;
+  }
+  if (files.data) {
+    fclose(files.data);
+    files.data = NULL;
   }
   if (files.p_index) {
     fclose(files.p_index);
+    files.p_index = NULL;
   }
   if (files.s_index_1) {
     fclose(files.s_index_1);
+    files.s_index_1 = NULL;
   }
-
   if (files.s_index_2) {
     fclose(files.s_index_2);
+    files.s_index_2 = NULL;
+  }
+  if (files.last_inserted) {
+    fclose(files.last_inserted);
+    files.last_inserted = NULL;
+  }
+  if (files.last_removed) {
+    fclose(files.last_removed);
+    files.last_removed = NULL;
   }
 }
 
@@ -181,7 +195,6 @@ void insert_register() {
   rewind(files.insere);
   struct StudentHist studentHists[insert_registers_count];
   fread(&studentHists, sizeof(studentHists), 1, files.insere);
-  fclose(files.insere);
 
   // get last inserted
   files.last_inserted = load_output_file(files.last_inserted_path);
@@ -216,7 +229,6 @@ void insert_register() {
 
   long endOfInserted = ftell(files.data);
   long byteOffset = endOfInserted - studentHistorySize - sizeof(buffer_size);
-  fclose(files.data);
 
   // write to last_inserted file
   fwrite(&last_inserted, sizeof(int), 1, files.last_inserted);
@@ -239,19 +251,27 @@ void insert_register() {
   files.s_index_1 = load_output_file(files.s_index_1_path);
   struct SecondaryIndex secondaryIndex;
   int foundByteOffset = -1;
-  fseek(files.s_index_1, sizeof(secondaryIndex.byteOffset), SEEK_CUR);
-  while (fread(&secondaryIndex, sizeof(secondaryIndex), 1, files.s_index_1)) {
+  int name_size;
+
+  while (fread(&name_size, sizeof(name_size), 1, files.s_index_1) == 1) {
+    fread(secondaryIndex.nome_aluno, name_size, 1, files.s_index_1);
+    fread(&secondaryIndex.byteOffset, sizeof(secondaryIndex.byteOffset), 1,
+          files.s_index_1);
+
     if (strcmp(secondaryIndex.nome_aluno,
                studentHists[last_inserted].nome_aluno) == 0) {
       foundByteOffset = secondaryIndex.byteOffset;
       break;
     }
+
+    memset(secondaryIndex.nome_aluno, 0, name_size);
   }
 
   printf("ByteOffset: %d\n\n\n", foundByteOffset);
 
   if (foundByteOffset == -1) {
     files.s_index_2 = load_output_file(files.s_index_2_path);
+
     fseek(files.s_index_2, 0, SEEK_END);
     secondaryIndex.byteOffset = ftell(files.s_index_2);
 
@@ -273,10 +293,6 @@ void insert_register() {
   }
 
   // Caso nome encontrado
-  fclose(files.p_index);
-  fclose(files.last_inserted);
-  fclose(files.s_index_1);
-  fclose(files.s_index_2);
 }
 
 void remove_files() {
@@ -316,9 +332,8 @@ int main() {
   do {
     command = read_command();
     run_command(command);
+    close_all_opened_files();
   } while (command != 4);
-
-  close_all_opened_files();
 
   printf("\n");
 }
