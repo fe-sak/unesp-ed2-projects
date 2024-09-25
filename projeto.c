@@ -88,7 +88,7 @@ FILE *load_output_file(char *file_path) {
   } else {
     // create file
     file_pointer = fopen(file_path, "wb+");
-    printf("\nArquivo %s criado\n", file_path);
+    printf("Arquivo %s criado\n", file_path);
   }
 
   return file_pointer;
@@ -245,12 +245,10 @@ void insert_register() {
   fwrite(&byteOffset, sizeof(byteOffset), 1, files.p_index);
 
   // write to secondary index
-  // 1- procurar o nome no arquivo S1
-  // Caso nome não encontrado
-  // TODO
+
   files.s_index_1 = load_output_file(files.s_index_1_path);
   struct SecondaryIndex secondaryIndex;
-  int foundByteOffset = -1;
+  int found_byte_offset = -1;
   int name_size;
 
   while (fread(&name_size, sizeof(name_size), 1, files.s_index_1) == 1) {
@@ -260,16 +258,17 @@ void insert_register() {
 
     if (strcmp(secondaryIndex.nome_aluno,
                studentHists[last_inserted].nome_aluno) == 0) {
-      foundByteOffset = secondaryIndex.byteOffset;
+      found_byte_offset = secondaryIndex.byteOffset;
       break;
     }
 
     memset(secondaryIndex.nome_aluno, 0, name_size);
   }
 
-  printf("ByteOffset: %d\n\n\n", foundByteOffset);
+  printf("\nfoundByteOffset of s2: %d\n", found_byte_offset);
 
-  if (foundByteOffset == -1) {
+  if (found_byte_offset < 0) {
+    // new secondary key case
     // write secondary key to s1
     files.s_index_2 = load_output_file(files.s_index_2_path);
 
@@ -294,18 +293,62 @@ void insert_register() {
 
     // write primary key reference to s2
     // primarykey_byteoffset
-    char primaryKey[7] = "";
-    strcat(primaryKey, studentHists[last_inserted].id_aluno);
-    strcat(primaryKey, "+");
-    strcat(primaryKey, studentHists[last_inserted].sigla_disc);
+    char primary_key[7] = "";
+    strcat(primary_key, studentHists[last_inserted].id_aluno);
+    strcat(primary_key, "+");
+    strcat(primary_key, studentHists[last_inserted].sigla_disc);
 
-    fwrite(primaryKey, sizeof(primaryKey), 1, files.s_index_2);
+    fwrite(primary_key, sizeof(primary_key), 1, files.s_index_2);
 
-    int endOfList = -1;
-    fwrite(&endOfList, sizeof(endOfList), 1, files.s_index_2);
+    int end_of_list = -1;
+    fwrite(&end_of_list, sizeof(end_of_list), 1, files.s_index_2);
+  } else {
+    // secondary key already in s1 case
+    // TODO bug: insert 7 times. First element of s2 is wrong
+    files.s_index_2 = load_output_file(files.s_index_2_path);
+
+    int prev_element_byte_offset;
+    int next_element_byte_offset = found_byte_offset;
+    char primary_key_buffer[8];
+    printf("id_aluno: %s\n", studentHists[last_inserted].id_aluno);
+    printf("found_byte_offset: %d\n", found_byte_offset);
+
+    do {
+      printf("\nnext_element_byte_offset: %d", next_element_byte_offset);
+      // TODO here
+      fseek(files.s_index_2, next_element_byte_offset, SEEK_SET);
+      prev_element_byte_offset = ftell(files.s_index_2);
+
+      fread(primary_key_buffer, sizeof(primary_key_buffer) - 1, 1,
+            files.s_index_2);
+      primary_key_buffer[8] = '\0';
+      printf("\nprimaryKey: %s***", primary_key_buffer);
+
+      fread(&next_element_byte_offset, sizeof(next_element_byte_offset), 1,
+            files.s_index_2);
+
+    } while (next_element_byte_offset != -1);
+
+    char primary_key[7] = "";
+    strcat(primary_key, studentHists[last_inserted].id_aluno);
+    strcat(primary_key, "+");
+    strcat(primary_key, studentHists[last_inserted].sigla_disc);
+
+    fseek(files.s_index_2, 0, SEEK_END);
+    int end_of_file = ftell(files.s_index_2);
+
+    fseek(files.s_index_2, prev_element_byte_offset + strlen(primary_key),
+          SEEK_SET);
+
+    fwrite(&end_of_file, sizeof(end_of_file), 1, files.s_index_2);
+
+    fseek(files.s_index_2, 0, SEEK_END);
+
+    fwrite(primary_key, strlen(primary_key), 1, files.s_index_2);
+
+    int end_of_list = -1;
+    fwrite(&end_of_list, sizeof(end_of_list), 1, files.s_index_2);
   }
-
-  // Caso nome encontrado
 }
 
 void remove_files() {
