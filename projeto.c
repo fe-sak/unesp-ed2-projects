@@ -1,4 +1,5 @@
 #include "projeto.h"
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,9 +15,20 @@ struct StudentHist {
   float freq;
 };
 
+struct PrimaryIndex {
+  char primary_key[8];
+  int byte_offset;
+};
+
 struct SecondaryIndex {
+  int nome_aluno_size;
   char nome_aluno[50];
-  int byteOffset;
+  int byte_offset;
+};
+
+struct PrimaryKeyReference {
+  char primary_key[8];
+  int next_element_byte_offset;
 };
 
 struct Files {
@@ -156,12 +168,16 @@ int read_command() {
   do {
     printf("\nOperações disponíveis ============================\n");
     printf("  1. Inserir\n");
-    printf("  2. Procurar por {ID do aluno, Sigla da disciplina}\n");
+    printf("  2. Procurar por {ID do aluno+Sigla da disciplina}\n");
     printf("  3. Procurar por Nome do aluno\n");
     printf("  4. Encerrar o programa\n");
     printf("--> ");
 
     scanf("%d", &command);
+    printf("\n");
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF)
+      ;
 
     invalid_command = !(command == 1 || command == 2 || command == 3 ||
                         command == 4 || command == 5);
@@ -227,21 +243,23 @@ void insert_register() {
   fwrite(&buffer_size, sizeof(int), 1, files.data);
   fwrite(buffer, sizeof(char), buffer_size, files.data);
 
-  long endOfInserted = ftell(files.data);
-  long byteOffset = endOfInserted - studentHistorySize - sizeof(buffer_size);
+  int endOfInserted = ftell(files.data);
+  int byteOffset = endOfInserted - studentHistorySize - sizeof(buffer_size);
 
   // write to last_inserted file
   fwrite(&last_inserted, sizeof(int), 1, files.last_inserted);
 
   // write to primary index
   files.p_index = load_output_file(files.p_index_path);
-  snprintf(buffer, sizeof(buffer), "%s+%s+",
+  snprintf(buffer, sizeof(buffer), "%s+%s",
            studentHists[last_inserted].id_aluno,
            studentHists[last_inserted].sigla_disc);
 
   fseek(files.p_index, 0, SEEK_END);
   buffer_size = strlen(buffer);
-  fwrite(buffer, sizeof(char), buffer_size, files.p_index);
+  fwrite(buffer, sizeof(char), 7, files.p_index);
+  char end_of_string = '\0';
+  fwrite(&end_of_string, 1, 1, files.p_index);
   fwrite(&byteOffset, sizeof(byteOffset), 1, files.p_index);
 
   // write to secondary index
@@ -253,12 +271,12 @@ void insert_register() {
 
   while (fread(&name_size, sizeof(name_size), 1, files.s_index_1) == 1) {
     fread(secondaryIndex.nome_aluno, name_size, 1, files.s_index_1);
-    fread(&secondaryIndex.byteOffset, sizeof(secondaryIndex.byteOffset), 1,
+    fread(&secondaryIndex.byte_offset, sizeof(secondaryIndex.byte_offset), 1,
           files.s_index_1);
 
     if (strcmp(secondaryIndex.nome_aluno,
                studentHists[last_inserted].nome_aluno) == 0) {
-      found_byte_offset = secondaryIndex.byteOffset;
+      found_byte_offset = secondaryIndex.byte_offset;
       break;
     }
 
@@ -273,22 +291,24 @@ void insert_register() {
     files.s_index_2 = load_output_file(files.s_index_2_path);
 
     fseek(files.s_index_2, 0, SEEK_END);
-    secondaryIndex.byteOffset = ftell(files.s_index_2);
+    secondaryIndex.byte_offset = ftell(files.s_index_2);
 
-    printf("SecondaryByteOffset: %d\n\n\n", secondaryIndex.byteOffset);
+    printf("SecondaryByteOffset: %d\n\n\n", secondaryIndex.byte_offset);
 
     strcpy(secondaryIndex.nome_aluno, studentHists[last_inserted].nome_aluno);
 
     printf("Nome: %s\n\n\n", secondaryIndex.nome_aluno);
 
-    int registerSize = strlen(secondaryIndex.nome_aluno);
+    int registerSize = strlen(secondaryIndex.nome_aluno) + 1;
 
     fseek(files.s_index_1, 0, SEEK_END);
     fwrite(&registerSize, sizeof(registerSize), 1, files.s_index_1);
 
     fwrite(secondaryIndex.nome_aluno, strlen(secondaryIndex.nome_aluno), 1,
            files.s_index_1);
-    fwrite(&secondaryIndex.byteOffset, sizeof(secondaryIndex.byteOffset), 1,
+    char end_of_register = '\0';
+    fwrite(&end_of_register, 1, 1, files.s_index_1);
+    fwrite(&secondaryIndex.byte_offset, sizeof(secondaryIndex.byte_offset), 1,
            files.s_index_1);
 
     // write primary key reference to s2
@@ -304,7 +324,6 @@ void insert_register() {
     fwrite(&end_of_list, sizeof(end_of_list), 1, files.s_index_2);
   } else {
     // secondary key already in s1 case
-    // TODO bug: insert 7 times. First element of s2 is wrong
     files.s_index_2 = load_output_file(files.s_index_2_path);
 
     int prev_element_byte_offset;
@@ -315,7 +334,6 @@ void insert_register() {
 
     do {
       printf("\nnext_element_byte_offset: %d", next_element_byte_offset);
-      // TODO here
       fseek(files.s_index_2, next_element_byte_offset, SEEK_SET);
       prev_element_byte_offset = ftell(files.s_index_2);
 
@@ -359,16 +377,124 @@ void remove_files() {
   remove(files.last_inserted_path);
 }
 
+void search_primary_key() {
+  printf("Digite a chave primária: ");
+  char primary_key[100];
+  scanf("%s", primary_key);
+
+  files.p_index = load_input_file(files.p_index_path);
+
+  struct PrimaryIndex primary_indexes[20];
+
+  int i = 0;
+  int byte_offset = -1;
+  while (fread(primary_indexes[i].primary_key,
+               sizeof(primary_indexes[i].primary_key), 1, files.p_index) != 0) {
+
+    fread(&primary_indexes[i].byte_offset,
+          sizeof(primary_indexes[i].byte_offset), 1, files.p_index);
+
+    if (strcmp(primary_indexes[i].primary_key, primary_key) == 0) {
+      printf("Chave {%s} encontrada no byte offset {%d}\n", primary_key,
+             primary_indexes[i].byte_offset);
+      byte_offset = primary_indexes[i].byte_offset;
+      break;
+    };
+
+    i++;
+  }
+
+  if (byte_offset == -1) {
+    printf("Chave {%s} não foi encontrada", primary_key);
+    return;
+  }
+
+  files.data = load_input_file(files.data_path);
+  fseek(files.data, byte_offset, SEEK_SET);
+
+  int register_size;
+  fread(&register_size, sizeof(register_size), 1, files.data);
+
+  char registry[register_size];
+  fread(&registry, sizeof(registry), 1, files.data);
+
+  printf("#####################################################################"
+         "####################\n");
+  printf("Registro encontrado: %s\n", registry);
+  printf("#####################################################################"
+         "####################\n");
+};
+
+void search_secondary_key() {
+  printf("Digite a chave secundária: ");
+  char secondary_key[100];
+  fgets(secondary_key, sizeof(secondary_key), stdin);
+  secondary_key[strcspn(secondary_key, "\n")] = '\0';
+
+  files.s_index_1 = load_input_file(files.s_index_1_path);
+
+  struct SecondaryIndex secondary_indexes[20];
+
+  int i = 0;
+  int byte_offset = -1;
+  while (fread(&secondary_indexes[i].nome_aluno_size,
+               sizeof(secondary_indexes[i].nome_aluno_size), 1,
+               files.s_index_1) != 0) {
+
+    fread(secondary_indexes[i].nome_aluno, secondary_indexes[i].nome_aluno_size,
+          1, files.s_index_1);
+
+    fread(&secondary_indexes[i].byte_offset,
+          sizeof(secondary_indexes[i].byte_offset), 1, files.s_index_1);
+
+    if (strcmp(secondary_indexes[i].nome_aluno, secondary_key) == 0) {
+      printf("Chave {%s} encontrada no byte offset {%d}\n",
+             secondary_indexes[i].nome_aluno, secondary_indexes[i].byte_offset);
+      byte_offset = secondary_indexes[i].byte_offset;
+      break;
+    };
+
+    i++;
+  }
+
+  if (byte_offset == -1) {
+    printf("Chave '%s' não foi encontrada", secondary_key);
+    return;
+  }
+
+  files.s_index_2 = load_input_file(files.s_index_2_path);
+
+  int next_element_byte_offset = byte_offset;
+
+  char primary_keys[20][8];
+  int j = 0;
+
+  do {
+    fseek(files.s_index_2, next_element_byte_offset, SEEK_SET);
+
+    fread(primary_keys[j], sizeof(primary_keys[j]) - 1, 1, files.s_index_2);
+
+    fread(&next_element_byte_offset, sizeof(next_element_byte_offset), 1,
+          files.s_index_2);
+
+    j++;
+  } while (next_element_byte_offset != -1);
+
+  
+
+  return;
+}
+
 void run_command(int command) {
   switch (command) {
   case 1:
     insert_register();
     break;
   case 2:
-    printf("\n2 não implementado\n");
+    search_primary_key();
     break;
   case 3:
-    printf("\n3 não implementado\n");
+    search_secondary_key();
     break;
   case 4:
     printf("\nPrograma encerrado ###############################\n");
